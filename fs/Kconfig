@@ -291,4 +291,8 @@ config FSYNC
 	bool "Enable/Disable fsync calls"
 	default n
 
+config ASYNC_FSYNC
+	bool "asynchronous fsync"
+	default y
+
 endmenu

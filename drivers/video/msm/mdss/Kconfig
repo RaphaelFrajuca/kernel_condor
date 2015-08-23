@@ -48,6 +48,10 @@ config MMI_PANEL_NOTIFICATIONS
 	---help---
 	MMI panel notifications framework
 
+config LCD_NOTIFY
+	bool 'Lcd Notify'
+	default y
+
 config MDSS_QUICKDRAW
 	select FB_QUICKDRAW
 	bool "MDSS quickdraw"

@@ -20,7 +20,7 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/cpufreq.h>
-#include <linux/lcd_notify.h>
+#include <linux/powersuspend.h>
 #include <linux/input.h>
 #include <linux/math64.h>
 #include <linux/kernel_stat.h>
@@ -38,6 +38,7 @@
 #define DEFAULT_MIN_CPUS_ONLINE	1
 #define DEFAULT_MAX_CPUS_ONLINE	NR_CPUS
 #define DEFAULT_FAST_LANE_LOAD	99
+#define DEFAULT_SUSPEND_MAX_CPUS 1
 
 static unsigned int debug = 0;
 module_param_named(debug_mask, debug, uint, 0644);
@@ -65,11 +66,11 @@ static struct cpu_hotplug {
 	struct work_struct down_work;
 	struct work_struct suspend_work;
 	struct work_struct resume_work;
-	struct notifier_block notif;
 } hotplug = {
 	.enabled = HOTPLUG_ENABLED,
 	.min_cpus_online = DEFAULT_MIN_CPUS_ONLINE,
 	.max_cpus_online = DEFAULT_MAX_CPUS_ONLINE,
+	.suspend_max_cpus = DEFAULT_SUSPEND_MAX_CPUS,
 	.cpus_boosted = DEFAULT_NR_CPUS_BOOSTED,
 	.down_lock_dur = DEFAULT_DOWN_LOCK_DUR,
 	.boost_lock_dur = DEFAULT_BOOST_LOCK_DUR,
@@ -598,29 +599,20 @@ static void msm_hotplug_resume(struct work_struct *work)
 	dprintk("%s: Resuming cpus to %uMHz\n", MSM_HOTPLUG, max_freq / 1000);
 }
 
-static int lcd_notifier_callback(struct notifier_block *nb,
-                                 unsigned long event, void *data)
+static void msm_hotplug_psuspend(struct power_suspend *handler)
 {
-	if (!hotplug.enabled)
-		return NOTIFY_OK;
-
-	switch (event) {
-	case LCD_EVENT_ON_START:
-		schedule_work(&hotplug.resume_work);
-		break;
-	case LCD_EVENT_ON_END:
-		break;
-	case LCD_EVENT_OFF_START:
-		break;
-	case LCD_EVENT_OFF_END:
-		schedule_work(&hotplug.suspend_work);
-		break;
-	default:
-		break;
-	}
-
-	return 0;
+	schedule_work(&hotplug.suspend_work);
 }
+
+static void msm_hotplug_presume(struct power_suspend *handler)
+{
+	schedule_work(&hotplug.resume_work);
+}
+
+static struct power_suspend msm_hotplug_power_suspend = {
+	.suspend = msm_hotplug_psuspend,
+	.resume = msm_hotplug_presume,
+};
 
 static unsigned int *get_tokenized_data(const char *buf, int *num_tokens)
 {
@@ -1137,12 +1129,7 @@ static int __devinit msm_hotplug_probe(struct platform_device *pdev)
 		goto err_dev;
 	}
 
-	hotplug.notif.notifier_call = lcd_notifier_callback;
-        if (lcd_register_client(&hotplug.notif) != 0) {
-                pr_err("%s: Failed to register LCD notifier callback\n",
-                       MSM_HOTPLUG);
-		goto err_dev;
-	}
+	register_power_suspend(&msm_hotplug_power_suspend);
 
 	ret = input_register_handler(&hotplug_input_handler);
 	if (ret) {
